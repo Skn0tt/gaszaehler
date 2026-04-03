@@ -1,8 +1,17 @@
 # Gaszähler
 
-ESP32-C6-based gas meter data collection firmware, built with [ESP-IDF](https://github.com/espressif/esp-idf) v5.4.1 and [ESP-Matter](https://github.com/espressif/esp-matter).
+Battery-powered gas meter pulse counter that reports consumption via **Matter** over **Thread**,
+with **1 year battery life** on a 2000 mAh battery.
+
+Parts:
+
+- DFrobot Firebeetle ESP32-C6
+- Reed switch, e.g. KY-021
+- lithium battery with JST connector
 
 ## Development
+
+Built with [ESP-IDF](https://github.com/espressif/esp-idf) v5.4.1 and [ESP-Matter](https://github.com/espressif/esp-matter).
 
 ```bash
 # Install system dependencies (macOS)

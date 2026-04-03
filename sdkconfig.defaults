@@ -31,3 +31,31 @@ CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
 # Disable ClosureControl/Dimension clusters (broken with GCC 14, not needed)
 CONFIG_SUPPORT_CLOSURE_CONTROL_CLUSTER=n
 CONFIG_SUPPORT_CLOSURE_DIMENSION_CLUSTER=n
+
+# Thread: Enable OpenThread and set as Minimal Thread Device (required for SED / ICD)
+CONFIG_OPENTHREAD_ENABLED=y
+CONFIG_OPENTHREAD_MTD=y
+
+# Matter ICD: Long Idle Time mode (per Matter spec §9.15.1.6–7)
+CONFIG_ENABLE_ICD_SERVER=y
+CONFIG_ENABLE_ICD_LIT=y
+CONFIG_ENABLE_ICD_CIP=y
+
+# Idle mode: poll parent every 120s, stay idle up to 15 min (900s)
+CONFIG_ICD_SLOW_POLL_INTERVAL_MS=120000
+CONFIG_ICD_IDLE_MODE_INTERVAL_SEC=900
+
+# Active mode: poll every 500ms, stay active for 10s (event-driven via ICDNotifier)
+CONFIG_ICD_FAST_POLL_INTERVAL_MS=500
+CONFIG_ICD_ACTIVE_MODE_INTERVAL_MS=0
+CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=10000
+
+# Report pending attribute changes when entering active mode
+CONFIG_ICD_REPORT_ON_ACTIVE_MODE=y
+
+# Automatic light sleep: CPU sleeps between RTOS ticks, GPIO interrupt wakes it
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+
+# Lower CPU frequency (80 MHz is sufficient for a sensor)
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y

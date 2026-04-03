@@ -1,0 +1,11 @@
+menu "Gas Meter Configuration"
+
+    config REED_SENSOR_GPIO
+        int "Reed sensor GPIO pin"
+        default 7
+        help
+            GPIO pin connected to the reed sensor of the gas meter.
+            The pin is configured with an internal pull-up; the reed
+            switch should pull it to ground when closed.
+
+endmenu

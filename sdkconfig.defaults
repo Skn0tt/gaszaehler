@@ -1,0 +1,33 @@
+# Enable HKDF in mbedtls (required by Matter)
+CONFIG_MBEDTLS_HKDF_C=y
+
+# Custom partition table for larger app binary
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Enable BT (required by Matter for commissioning)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# Disable BT connection reattempt
+CONFIG_BT_NIMBLE_ENABLE_CONN_REATTEMPT=n
+
+# Enable lwIP IPv6 autoconfig
+CONFIG_LWIP_IPV6_AUTOCONFIG=y
+
+# Enable lwIP route hooks
+CONFIG_LWIP_HOOK_IP6_ROUTE_DEFAULT=y
+CONFIG_LWIP_HOOK_ND6_GET_GW_DEFAULT=y
+
+# Increase LwIP IPv6 address number to 6 (MAX_FABRIC + 1)
+CONFIG_LWIP_IPV6_NUM_ADDRESSES=6
+
+# Use 4MB flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Disable softap by default
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+
+# Disable ClosureControl/Dimension clusters (broken with GCC 14, not needed)
+CONFIG_SUPPORT_CLOSURE_CONTROL_CLUSTER=n
+CONFIG_SUPPORT_CLOSURE_DIMENSION_CLUSTER=n

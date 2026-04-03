@@ -1,6 +1,6 @@
 # Gaszähler
 
-ESP32-C6-based gas meter data collection firmware, built with [ESP-IDF](https://github.com/espressif/esp-idf) v6.0.
+ESP32-C6-based gas meter data collection firmware, built with [ESP-IDF](https://github.com/espressif/esp-idf) v5.4.1 and [ESP-Matter](https://github.com/espressif/esp-matter).
 
 ## Development
 
@@ -21,7 +21,7 @@ For other operating systems or installation methods, see the [ESP-IDF Getting St
 
 ```bash
 # Useful scripts:
-source ~/.espressif/tools/activate_idf_v6.0.sh # run in every new terminal session
+source ~/.espressif/tools/activate_idf_v5.4.1.sh # run in every new terminal session
 idf.py build
 idf.py -p PORT flash # Replace `PORT` with your serial port (e.g. `/dev/cu.usbserial-X` on macOS)
 idf.py -p PORT monitor # monitor serial output
@@ -36,7 +36,10 @@ idf.py menuconfig # Configure project settings (Wi-Fi, peripherals, etc.)
 ├── CMakeLists.txt             Root build configuration
 ├── main/
 │   ├── CMakeLists.txt         Main component build configuration
+│   ├── idf_component.yml      Managed component dependencies (esp-matter, etc.)
 │   └── gaszaehler_main.c      Application entry point
+├── partitions.csv             Custom partition table
+├── sdkconfig.defaults         Default build configuration
 ├── sdkconfig                  Project configuration (generated, not committed)
 └── README.md
 ```

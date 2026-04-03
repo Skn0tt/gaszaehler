@@ -167,7 +167,7 @@ static void battery_monitor_task(void *)
         attribute::update(power_source_endpoint_id, PowerSource::Id,
                           PowerSource::Attributes::BatChargeLevel::Id, &lvl_val);
 
-        vTaskDelay(pdMS_TO_TICKS(60000));  /* read every 60 s */
+        vTaskDelay(pdMS_TO_TICKS(30 * 60 * 1000));  /* read every 30 min */
     }
 }
 
@@ -175,8 +175,59 @@ static void battery_monitor_task(void *)
 
 static void app_event_cb(const chip::DeviceLayer::ChipDeviceEvent *event, intptr_t arg)
 {
-    if (event->Type == chip::DeviceLayer::DeviceEventType::kCommissioningComplete) {
+    switch (event->Type) {
+    case chip::DeviceLayer::DeviceEventType::kCommissioningComplete:
         ESP_LOGI(TAG, "Commissioning complete");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kFailSafeTimerExpired:
+        ESP_LOGI(TAG, "FailSafe timer expired");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCommissioningSessionStarted:
+        ESP_LOGI(TAG, "Commissioning session started");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCommissioningSessionStopped:
+        ESP_LOGI(TAG, "Commissioning session stopped");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCommissioningWindowOpened:
+        ESP_LOGI(TAG, "Commissioning window opened");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCommissioningWindowClosed:
+        ESP_LOGI(TAG, "Commissioning window closed");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kFabricRemoved:
+        ESP_LOGI(TAG, "Fabric removed");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kFabricWillBeRemoved:
+        ESP_LOGI(TAG, "Fabric will be removed");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kFabricUpdated:
+        ESP_LOGI(TAG, "Fabric updated");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kFabricCommitted:
+        ESP_LOGI(TAG, "Fabric committed");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kInterfaceIpAddressChanged:
+        ESP_LOGI(TAG, "IP address changed (type=%d)",
+                 event->InterfaceIpAddressChanged.Type);
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCHIPoBLEConnectionEstablished:
+        ESP_LOGI(TAG, "BLE connection established");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCHIPoBLEConnectionClosed:
+        ESP_LOGI(TAG, "BLE connection closed");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kCHIPoBLEAdvertisingChange:
+        ESP_LOGI(TAG, "BLE advertising change");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kDnssdInitialized:
+        ESP_LOGI(TAG, "DNS-SD initialized");
+        break;
+    case chip::DeviceLayer::DeviceEventType::kOperationalNetworkEnabled:
+        ESP_LOGI(TAG, "Operational network enabled");
+        break;
+    default:
+        ESP_LOGD(TAG, "Unhandled event type: %d", static_cast<int>(event->Type));
+        break;
     }
 }
 
@@ -187,10 +238,95 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
     return ESP_OK;
 }
 
+/* ── Identification LED blinking ──────────────────────────────── */
+
+#define IDENTIFY_LED_GPIO ((gpio_num_t)CONFIG_IDENTIFY_LED_GPIO)
+
+static TaskHandle_t identify_task_handle = NULL;
+
+static void identify_blink_task(void *arg)
+{
+    int period_ms = reinterpret_cast<intptr_t>(arg);
+    bool on = false;
+    for (;;) {
+        on = !on;
+        gpio_set_level(IDENTIFY_LED_GPIO, on ? 1 : 0);
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(period_ms / 2)) > 0) {
+            /* Notified → stop */
+            break;
+        }
+    }
+    gpio_set_level(IDENTIFY_LED_GPIO, 0);
+    identify_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+static void identify_stop()
+{
+    if (identify_task_handle) {
+        xTaskNotifyGive(identify_task_handle);
+        identify_task_handle = NULL;
+    } else {
+        gpio_set_level(IDENTIFY_LED_GPIO, 0);
+    }
+}
+
+static void identify_start_effect(uint8_t effect_id)
+{
+    identify_stop();
+
+    int period_ms;
+    switch (effect_id) {
+    case 0x00: /* Blink */
+        period_ms = 500;
+        break;
+    case 0x01: /* Breathe */
+        period_ms = 1000;
+        break;
+    case 0x02: /* Okay – single quick flash */
+        gpio_set_level(IDENTIFY_LED_GPIO, 1);
+        vTaskDelay(pdMS_TO_TICKS(300));
+        gpio_set_level(IDENTIFY_LED_GPIO, 0);
+        return;
+    case 0x0B: /* Channel change */
+        period_ms = 8000;
+        break;
+    case 0xFE: /* Finish effect – complete current then stop */
+    case 0xFF: /* Stop effect */
+        identify_stop();
+        return;
+    default:
+        period_ms = 500;
+        break;
+    }
+
+    xTaskCreate(identify_blink_task, "id_blink", 2048,
+                reinterpret_cast<void *>(period_ms), 2, &identify_task_handle);
+}
+
 static esp_err_t app_identification_cb(identification::callback_type_t type, uint16_t endpoint_id,
                                        uint8_t effect_id, uint8_t effect_variant, void *priv_data)
 {
-    ESP_LOGI(TAG, "Identification: type=%u, effect=%u", type, effect_id);
+    ESP_LOGI(TAG, "Identification: type=%u endpoint=%u effect=0x%02x variant=0x%02x",
+             type, endpoint_id, effect_id, effect_variant);
+
+    switch (type) {
+    case identification::callback_type_t::START:
+        ESP_LOGI(TAG, "Identify START");
+        identify_start_effect(effect_id);
+        break;
+    case identification::callback_type_t::STOP:
+        ESP_LOGI(TAG, "Identify STOP");
+        identify_stop();
+        break;
+    case identification::callback_type_t::EFFECT:
+        ESP_LOGI(TAG, "Identify EFFECT: 0x%02x", effect_id);
+        identify_start_effect(effect_id);
+        break;
+    default:
+        ESP_LOGW(TAG, "Unknown identification type: %u", type);
+        break;
+    }
     return ESP_OK;
 }
 
@@ -283,6 +419,17 @@ extern "C" void app_main()
     /* Start Matter */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) { ESP_LOGE(TAG, "esp_matter::start: %d", err); return; }
+
+    /* Identification LED */
+    gpio_config_t led_io = {
+        .pin_bit_mask  = 1ULL << IDENTIFY_LED_GPIO,
+        .mode          = GPIO_MODE_OUTPUT,
+        .pull_up_en    = GPIO_PULLUP_DISABLE,
+        .pull_down_en  = GPIO_PULLDOWN_DISABLE,
+        .intr_type     = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&led_io);
+    gpio_set_level(IDENTIFY_LED_GPIO, 0);
 
     /* Counter task + reed-sensor GPIO */
     xTaskCreate(gas_counter_task, "gas_cnt", 4096, NULL, 5, &counter_task_handle);

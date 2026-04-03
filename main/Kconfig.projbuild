@@ -8,4 +8,11 @@ menu "Gas Meter Configuration"
             The pin is configured with an internal pull-up; the reed
             switch should pull it to ground when closed.
 
+    config IDENTIFY_LED_GPIO
+        int "Identification LED GPIO pin"
+        default 15
+        help
+            GPIO pin connected to the onboard LED used for
+            Matter Identify cluster visual feedback.
+
 endmenu

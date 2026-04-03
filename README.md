@@ -57,4 +57,3 @@ idf.py menuconfig # Configure project settings (Wi-Fi, peripherals, etc.)
 ## TODO
 
 - **Migrate to Commodity Metering cluster**: The gas counter currently uses a custom vendor-specific cluster (`0xFFF10000`). The Matter spec (1.5+) introduced a standard [Commodity Metering](https://github.com/project-chip/connectedhomeip/issues/40140) cluster that covers gas/water/energy metering. Once esp-matter picks up connectedhomeip support for it, replace the custom cluster with the standard one for proper controller interoperability.
-- **Power down flash in light sleep**: Enable `CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y` to cut ~1-2mA flash leakage during light sleep. Requires verifying the board's flash chip supports clean power-cycling and that all wake-path code is in IRAM/DRAM.

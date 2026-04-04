@@ -8,12 +8,14 @@
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <esp_matter.h>
+#include "commodity_metering.h"
 #include <driver/gpio.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <time.h>
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <platform/ESP32/OpenthreadLauncher.h>
@@ -24,10 +26,6 @@
 #endif
 
 static const char *TAG = "gaszaehler";
-
-/* Custom gas-meter cluster in the vendor-specific test range */
-static constexpr uint32_t CLUSTER_ID_GAS_METER = 0xFFF10000;
-static constexpr uint32_t ATTR_ID_GAS_COUNT    = 0x00000000;
 
 using namespace esp_matter;
 using namespace chip::app::Clusters;
@@ -83,9 +81,26 @@ static void gas_counter_task(void *)
 
         nvs_save_gas_count();
 
-        esp_matter_attr_val_t val = esp_matter_uint32(gas_count);
-        attribute::update(gas_endpoint_id, CLUSTER_ID_GAS_METER,
-                          ATTR_ID_GAS_COUNT, &val);
+        /* TLV-encode the MeteredQuantity list and push to Matter */
+        uint8_t tlv_buf[64];
+        uint16_t tlv_len = 0;
+        if (commodity_metering_encode_quantity((int64_t)gas_count, tlv_buf, sizeof(tlv_buf), &tlv_len) == ESP_OK) {
+            esp_matter_attr_val_t val = esp_matter_array(tlv_buf, tlv_len, 1);
+            attribute::update(gas_endpoint_id, CommodityMetering::Id,
+                              CommodityMetering::Attributes::MeteredQuantity::Id, &val);
+        } else {
+            ESP_LOGE(TAG, "Failed to encode MeteredQuantity");
+        }
+
+        /* Update MeteredQuantityTimestamp (epoch seconds).
+           Before SNTP sync, time() returns seconds since boot — skip those
+           by requiring a plausible wall-clock time (after 2000-01-01). */
+        time_t now = time(NULL);
+        if (now > 946684800) {
+            esp_matter_attr_val_t ts_val = esp_matter_nullable_uint32((uint32_t)now);
+            attribute::update(gas_endpoint_id, CommodityMetering::Id,
+                              CommodityMetering::Attributes::MeteredQuantityTimestamp::Id, &ts_val);
+        }
 
 #ifdef CONFIG_ENABLE_ICD_SERVER
         /* Wake ICD into active mode so the report is sent immediately */
@@ -208,7 +223,7 @@ static void app_event_cb(const chip::DeviceLayer::ChipDeviceEvent *event, intptr
         break;
     case chip::DeviceLayer::DeviceEventType::kInterfaceIpAddressChanged:
         ESP_LOGI(TAG, "IP address changed (type=%d)",
-                 event->InterfaceIpAddressChanged.Type);
+                 static_cast<int>(event->InterfaceIpAddressChanged.Type));
         break;
     case chip::DeviceLayer::DeviceEventType::kCHIPoBLEConnectionEstablished:
         ESP_LOGI(TAG, "BLE connection established");
@@ -355,18 +370,21 @@ extern "C" void app_main()
     cluster::descriptor::config_t desc_cfg;
     cluster::descriptor::create(ep, &desc_cfg, CLUSTER_FLAG_SERVER);
 
-    /* Custom gas-meter cluster */
-    cluster_t *cl = cluster::create(ep, CLUSTER_ID_GAS_METER, CLUSTER_FLAG_SERVER);
-    if (!cl) { ESP_LOGE(TAG, "cluster::create failed"); return; }
+    /* CommodityMetering cluster */
+    cluster::commodity_metering::config_t cm_cfg;
+    cluster_t *cl = cluster::commodity_metering::create(ep, &cm_cfg, CLUSTER_FLAG_SERVER);
+    if (!cl) { ESP_LOGE(TAG, "commodity_metering::create failed"); return; }
 
-    cluster::global::attribute::create_cluster_revision(cl, 1);
-    cluster::global::attribute::create_feature_map(cl, 0);
+    /* Seed MeteredQuantity from NVS */
+    uint8_t init_tlv[64];
+    uint16_t init_len = 0;
+    if (commodity_metering_encode_quantity((int64_t)gas_count, init_tlv, sizeof(init_tlv), &init_len) == ESP_OK) {
+        esp_matter_attr_val_t init_val = esp_matter_array(init_tlv, init_len, 1);
+        attribute::update(gas_endpoint_id, CommodityMetering::Id,
+                          CommodityMetering::Attributes::MeteredQuantity::Id, &init_val);
+    }
 
-    /* gas_count attribute – seeded from NVS */
-    attribute::create(cl, ATTR_ID_GAS_COUNT, ATTRIBUTE_FLAG_NONE,
-                      esp_matter_uint32(gas_count));
-
-    ESP_LOGI(TAG, "Gas meter endpoint %u", gas_endpoint_id);
+    ESP_LOGI(TAG, "CommodityMetering endpoint %u", gas_endpoint_id);
 
     /* Power Source endpoint (standard Matter cluster 0x002F) */
     endpoint_t *ps_ep = endpoint::create(node, ENDPOINT_FLAG_NONE, NULL);

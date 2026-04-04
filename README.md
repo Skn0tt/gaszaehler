@@ -46,7 +46,9 @@ idf.py menuconfig # Configure project settings (Wi-Fi, peripherals, etc.)
 ├── main/
 │   ├── CMakeLists.txt         Main component build configuration
 │   ├── idf_component.yml      Managed component dependencies (esp-matter, etc.)
-│   └── gaszaehler_main.cpp     Application entry point
+│   ├── gaszaehler_main.cpp    Application entry point
+│   ├── commodity_metering.h   Local CommodityMetering cluster helper (stopgap)
+│   └── commodity_metering.cpp
 ├── partitions.csv             Custom partition table
 ├── sdkconfig.defaults         Default build configuration
 ├── sdkconfig                  Project configuration (generated, not committed)
@@ -56,4 +58,5 @@ idf.py menuconfig # Configure project settings (Wi-Fi, peripherals, etc.)
 
 ## TODO
 
-- **Migrate to Commodity Metering cluster**: The gas counter currently uses a custom vendor-specific cluster (`0xFFF10000`). The Matter spec (1.5+) introduced a standard [Commodity Metering](https://github.com/project-chip/connectedhomeip/issues/40140) cluster that covers gas/water/energy metering. Once esp-matter picks up connectedhomeip support for it, replace the custom cluster with the standard one for proper controller interoperability.
+- **Upstream CommodityMetering support**: The gas counter uses the standard Matter [Commodity Metering](https://github.com/project-chip/connectedhomeip/issues/40140) cluster (0x0B07) via a local helper (`commodity_metering.h/cpp`). Once esp-matter ships a built-in `cluster::commodity_metering` wrapper, remove the local files and switch to the upstream API.
+- **MeasurementTypeEnum for gas**: The `MeasurementTypeEnum` in the Matter spec currently only has electrical values — no gas/water/thermal. We set `kUnspecified` (0x00) for now. Update once the spec adds a proper commodity type.

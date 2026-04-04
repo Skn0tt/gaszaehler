@@ -16,6 +16,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <time.h>
+#include <app/clusters/time-synchronization-server/DefaultTimeSyncDelegate.h>
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <platform/ESP32/OpenthreadLauncher.h>
@@ -59,6 +60,29 @@ static esp_err_t nvs_save_gas_count()
     nvs_close(h);
     return err;
 }
+
+/* ── Time Synchronization delegate (logs SetUTCTime to NVS) ── */
+
+class GaszaehlerTimeSyncDelegate : public chip::app::Clusters::TimeSynchronization::DefaultTimeSyncDelegate
+{
+public:
+    void UTCTimeAvailabilityChanged(uint64_t time) override
+    {
+        /* time is in microseconds since the CHIP epoch (2000-01-01). */
+        uint32_t chip_epoch_secs = static_cast<uint32_t>(time / 1000000ULL);
+
+        nvs_handle_t h;
+        if (nvs_open("gaszaehler", NVS_READWRITE, &h) == ESP_OK) {
+            nvs_set_u32(h, "last_sync", chip_epoch_secs);
+            nvs_commit(h);
+            nvs_close(h);
+        }
+
+        ESP_LOGI(TAG, "Time synced: CHIP epoch %lu s", (unsigned long)chip_epoch_secs);
+    }
+};
+
+static GaszaehlerTimeSyncDelegate s_time_sync_delegate;
 
 /* ── GPIO ISR ─────────────────────────────────────────────────── */
 
@@ -360,6 +384,18 @@ extern "C" void app_main()
     node::config_t node_cfg;
     node_t *node = node::create(&node_cfg, app_attribute_update_cb, app_identification_cb);
     if (!node) { ESP_LOGE(TAG, "node::create failed"); return; }
+
+    /* Add Time Synchronization cluster to root endpoint (endpoint 0).
+       The CHIP stack handles SetUTCTime internally — it calls
+       settimeofday() so time(NULL) returns wall-clock after sync. */
+    endpoint_t *root_ep = endpoint::get(node, 0);
+    if (root_ep) {
+        cluster::time_synchronization::config_t ts_cfg;
+        ts_cfg.delegate = &s_time_sync_delegate;
+        cluster_t *ts_cl = cluster::time_synchronization::create(root_ep, &ts_cfg, CLUSTER_FLAG_SERVER);
+        if (!ts_cl) { ESP_LOGW(TAG, "time_synchronization::create failed"); }
+        else { ESP_LOGI(TAG, "Time Synchronization cluster on endpoint 0"); }
+    }
 
     /* Endpoint (generic, hosts our custom cluster) */
     endpoint_t *ep = endpoint::create(node, ENDPOINT_FLAG_NONE, NULL);

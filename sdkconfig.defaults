@@ -59,3 +59,12 @@ CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 
 # Lower CPU frequency (80 MHz is sufficient for a sensor)
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+
+# Enable GetClock_RealTime() so the Time Synchronization cluster can read back
+# UTC time set via SetUTCTime. This flag only ungates gettimeofday() in
+# SystemTimeSupport.cpp — it does NOT start an SNTP client.
+# See README TODO about the upstream CHIP bug.
+CONFIG_ENABLE_SNTP_TIME_SYNC=y
+
+# CHIP project config: overrides vendor/product name and software version
+CONFIG_CHIP_PROJECT_CONFIG="main/CHIPProjectConfig.h"

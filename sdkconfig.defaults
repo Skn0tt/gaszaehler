@@ -28,6 +28,18 @@ CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 # Disable softap by default
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
 
+# Thread-only: disable WiFi station so the commissioner uses Thread
+CONFIG_ENABLE_WIFI_STATION=n
+
+# Thread-only: use platform DNS-SD (SRP) instead of minimal mDNS (UDP multicast)
+# Minimal mDNS cannot advertise on Thread — services must go through the
+# Border Router's SRP server so its mDNS proxy can answer on behalf of the device.
+CONFIG_USE_MINIMAL_MDNS=n
+
+# Thread is IPv6-only
+CONFIG_DISABLE_IPV4=y
+CONFIG_LWIP_IPV4=n
+
 # Disable ClosureControl/Dimension clusters (broken with GCC 14, not needed)
 CONFIG_SUPPORT_CLOSURE_CONTROL_CLUSTER=n
 CONFIG_SUPPORT_CLOSURE_DIMENSION_CLUSTER=n

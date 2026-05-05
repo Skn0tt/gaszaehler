@@ -11,6 +11,7 @@
 #include <esp_matter_endpoint.h>
 #include "commodity_metering.h"
 #include <driver/gpio.h>
+#include <esp_sleep.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
@@ -106,21 +107,17 @@ static void gas_counter_task(void *)
 
         nvs_save_gas_count();
 
-        /* TLV-encode the MeteredQuantity list and push to Matter */
-        uint8_t tlv_buf[64];
-        uint16_t tlv_len = 0;
-        if (commodity_metering_encode_quantity((int64_t)gas_count, tlv_buf, sizeof(tlv_buf), &tlv_len) == ESP_OK) {
-            esp_matter_attr_val_t val = esp_matter_array(tlv_buf, tlv_len, 1);
-            attribute::update(gas_endpoint_id, CommodityMetering::Id,
-                              CommodityMetering::Attributes::MeteredQuantity::Id, &val);
-        } else {
-            ESP_LOGE(TAG, "Failed to encode MeteredQuantity");
-        }
+        time_t now = time(NULL);
+
+        chip::DeviceLayer::PlatformMgr().LockChipStack();
+
+        esp_matter_attr_val_t val = esp_matter_nullable_int64(nullable<int64_t>((int64_t)gas_count));
+        attribute::update(gas_endpoint_id, CommodityMetering::Id,
+                          CommodityMetering::Attributes::MeteredQuantity::Id, &val);
 
         /* Update MeteredQuantityTimestamp (epoch seconds).
            Before SNTP sync, time() returns seconds since boot — skip those
            by requiring a plausible wall-clock time (after 2000-01-01). */
-        time_t now = time(NULL);
         if (now > 946684800) {
             esp_matter_attr_val_t ts_val = esp_matter_nullable_uint32((uint32_t)now);
             attribute::update(gas_endpoint_id, CommodityMetering::Id,
@@ -131,6 +128,8 @@ static void gas_counter_task(void *)
         /* Wake ICD into active mode so the report is sent immediately */
         chip::app::ICDNotifier::GetInstance().NotifyNetworkActivityNotification();
 #endif
+
+        chip::DeviceLayer::PlatformMgr().UnlockChipStack();
 
         /* debounce: ignore further edges for 200 ms */
         vTaskDelay(pdMS_TO_TICKS(200));
@@ -184,28 +183,32 @@ static void battery_monitor_task(void *)
         int bat_mv = battery_read_millivolts();
         ESP_LOGI(TAG, "Battery: %d mV", bat_mv);
 
-        /* Update Power Source cluster attributes */
-        esp_matter_attr_val_t volt_val = esp_matter_nullable_uint32((uint32_t)bat_mv);
-        attribute::update(power_source_endpoint_id, PowerSource::Id,
-                          PowerSource::Attributes::BatVoltage::Id, &volt_val);
-
         /* Rough Li-ion percentage: 3300 mV = 0 %, 4200 mV = 100 %
            Matter uses half-percent units: 0–200 */
         int pct = (bat_mv - 3300) * 200 / (4200 - 3300);
         if (pct < 0) pct = 0;
         if (pct > 200) pct = 200;
-        esp_matter_attr_val_t pct_val = esp_matter_nullable_uint8((uint8_t)pct);
-        attribute::update(power_source_endpoint_id, PowerSource::Id,
-                          PowerSource::Attributes::BatPercentRemaining::Id, &pct_val);
 
-        /* Update charge level: OK / Warning / Critical */
         uint8_t charge_level;
         if (pct > 40)       charge_level = 0; /* OK */
         else if (pct > 20)  charge_level = 1; /* Warning */
         else                charge_level = 2; /* Critical */
+
+        chip::DeviceLayer::PlatformMgr().LockChipStack();
+
+        esp_matter_attr_val_t volt_val = esp_matter_nullable_uint32((uint32_t)bat_mv);
+        attribute::update(power_source_endpoint_id, PowerSource::Id,
+                          PowerSource::Attributes::BatVoltage::Id, &volt_val);
+
+        esp_matter_attr_val_t pct_val = esp_matter_nullable_uint8((uint8_t)pct);
+        attribute::update(power_source_endpoint_id, PowerSource::Id,
+                          PowerSource::Attributes::BatPercentRemaining::Id, &pct_val);
+
         esp_matter_attr_val_t lvl_val = esp_matter_enum8(charge_level);
         attribute::update(power_source_endpoint_id, PowerSource::Id,
                           PowerSource::Attributes::BatChargeLevel::Id, &lvl_val);
+
+        chip::DeviceLayer::PlatformMgr().UnlockChipStack();
 
         vTaskDelay(pdMS_TO_TICKS(30 * 60 * 1000));  /* read every 30 min */
     }
@@ -417,13 +420,9 @@ extern "C" void app_main()
     if (!cl) { ESP_LOGE(TAG, "commodity_metering::create failed"); return; }
 
     /* Seed MeteredQuantity from NVS */
-    uint8_t init_tlv[64];
-    uint16_t init_len = 0;
-    if (commodity_metering_encode_quantity((int64_t)gas_count, init_tlv, sizeof(init_tlv), &init_len) == ESP_OK) {
-        esp_matter_attr_val_t init_val = esp_matter_array(init_tlv, init_len, 1);
-        attribute::update(gas_endpoint_id, CommodityMetering::Id,
-                          CommodityMetering::Attributes::MeteredQuantity::Id, &init_val);
-    }
+    esp_matter_attr_val_t init_val = esp_matter_nullable_int64(nullable<int64_t>((int64_t)gas_count));
+    attribute::update(gas_endpoint_id, CommodityMetering::Id,
+                      CommodityMetering::Attributes::MeteredQuantity::Id, &init_val);
 
     ESP_LOGI(TAG, "CommodityMetering endpoint %u", gas_endpoint_id);
 
@@ -508,6 +507,12 @@ extern "C" void app_main()
     gpio_config(&io);
     gpio_install_isr_service(0);
     gpio_isr_handler_add(pin, reed_isr, NULL);
+
+    /* GPIO_INTR_NEGEDGE only fires while the CPU is awake.
+       With light sleep / tickless idle enabled, we also need a level-triggered
+       wakeup source so the CPU wakes up when the reed closes while sleeping. */
+    gpio_wakeup_enable(pin, GPIO_INTR_LOW_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
 
     /* Battery ADC + monitor task */
     err = battery_adc_init();

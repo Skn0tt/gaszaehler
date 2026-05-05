@@ -17,7 +17,6 @@
 #include <esp_matter.h>
 #include <clusters/CommodityMetering/ClusterId.h>
 #include <clusters/CommodityMetering/AttributeIds.h>
-#include <clusters/CommodityMetering/Structs.h>
 
 namespace esp_matter {
 namespace cluster {
@@ -30,26 +29,12 @@ typedef struct config {
 cluster_t *create(endpoint_t *endpoint, config_t *config, uint8_t flags);
 
 namespace attribute {
-attribute_t *create_metered_quantity(cluster_t *cluster, const uint8_t *value, uint16_t length, uint16_t count);
+attribute_t *create_metered_quantity(cluster_t *cluster, nullable<int64_t> value);
 attribute_t *create_metered_quantity_timestamp(cluster_t *cluster, nullable<uint32_t> value);
 attribute_t *create_measurement_type(cluster_t *cluster, nullable<uint16_t> value);
 } /* attribute */
 
 } /* commodity_metering */
 } /* cluster */
-
-/**
- * TLV-encode a single MeteredQuantityStruct { tariffComponentIDs: [], quantity: int64 }
- * wrapped in a single-element list, suitable for attribute::update().
- *
- * @param quantity  The metered quantity value (e.g. gas pulse count).
- * @param buf       Output buffer for TLV bytes.
- * @param buf_size  Size of buf.
- * @param out_len   Receives the number of bytes written.
- * @return ESP_OK on success.
- */
-esp_err_t commodity_metering_encode_quantity(int64_t quantity,
-                                            uint8_t *buf, size_t buf_size,
-                                            uint16_t *out_len);
 
 } /* esp_matter */

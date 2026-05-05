@@ -8,6 +8,7 @@
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <esp_matter.h>
+#include <esp_matter_endpoint.h>
 #include "commodity_metering.h"
 #include <driver/gpio.h>
 #include <esp_adc/adc_oneshot.h>
@@ -402,6 +403,10 @@ extern "C" void app_main()
     if (!ep) { ESP_LOGE(TAG, "endpoint::create failed"); return; }
     gas_endpoint_id = endpoint::get_id(ep);
 
+    /* No standard "Gas Meter" device type in Matter 1.5 yet.
+       Use a test/manufacturer-specific device type (0xFFF10001). */
+    endpoint::add_device_type(ep, 0xFFF10001, 1);
+
     /* Descriptor cluster (required on every endpoint) */
     cluster::descriptor::config_t desc_cfg;
     cluster::descriptor::create(ep, &desc_cfg, CLUSTER_FLAG_SERVER);
@@ -427,6 +432,10 @@ extern "C" void app_main()
     if (!ps_ep) { ESP_LOGE(TAG, "ps endpoint::create failed"); return; }
     power_source_endpoint_id = endpoint::get_id(ps_ep);
 
+    /* Register device type */
+    endpoint::add_device_type(ps_ep, ESP_MATTER_POWER_SOURCE_DEVICE_TYPE_ID,
+                              ESP_MATTER_POWER_SOURCE_DEVICE_TYPE_VERSION);
+
     cluster::descriptor::config_t ps_desc_cfg;
     cluster::descriptor::create(ps_ep, &ps_desc_cfg, CLUSTER_FLAG_SERVER);
 
@@ -446,9 +455,9 @@ extern "C" void app_main()
     if (!ps_cl) { ESP_LOGE(TAG, "power_source::create failed"); return; }
 
     /* Add optional battery attributes for voltage, percentage & capacity */
-    cluster::power_source::attribute::create_bat_voltage(ps_cl, nullable<uint32_t>(0), nullable<uint32_t>(0), nullable<uint32_t>(0));
+    cluster::power_source::attribute::create_bat_voltage(ps_cl, nullable<uint32_t>(0), nullable<uint32_t>(0), nullable<uint32_t>(10000));
     cluster::power_source::attribute::create_bat_percent_remaining(ps_cl, nullable<uint8_t>(0), nullable<uint8_t>(0), nullable<uint8_t>(200));
-    cluster::power_source::attribute::create_bat_capacity(ps_cl, 2500, 0, 0);
+    cluster::power_source::attribute::create_bat_capacity(ps_cl, 2500, 0, 65535);
 
     ESP_LOGI(TAG, "Power source endpoint %u", power_source_endpoint_id);
 
@@ -503,7 +512,7 @@ extern "C" void app_main()
     /* Battery ADC + monitor task */
     err = battery_adc_init();
     if (err != ESP_OK) { ESP_LOGE(TAG, "battery_adc_init: %d", err); }
-    else { xTaskCreate(battery_monitor_task, "bat_mon", 2048, NULL, 3, NULL); }
+    else { xTaskCreate(battery_monitor_task, "bat_mon", 4096, NULL, 3, NULL); }
 
     ESP_LOGI(TAG, "Ready – reed sensor on GPIO %d", (int)pin);
 }

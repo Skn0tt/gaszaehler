@@ -69,6 +69,24 @@ CONFIG_ICD_REPORT_ON_ACTIVE_MODE=y
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 
+# Power down peripherals (UART/SPI/I2C state retained in retention mem) during light sleep
+CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y
+
+# Allow the 802.15.4 radio to enter sleep between data polls (huge SED battery win).
+# Without this the radio stays powered ~continuously between polls (~80–120 mA).
+CONFIG_IEEE802154_SLEEP_ENABLE=y
+
+# Allow the BLE controller to sleep between advertising / connection events.
+# Matters whenever the commissioning window is open or BLE is reactivated later.
+CONFIG_BT_LE_SLEEP_ENABLE=y
+# Required by BT_LE_SLEEP_ENABLE: power down MAC + baseband during light sleep
+CONFIG_MAC_BB_PD=y
+
+# Keep USB-Serial-JTAG alive while a host is connected so `idf.py monitor`/flash
+# stays usable for development. When the cable is unplugged (battery operation)
+# light sleep resumes normally and the saving is unaffected.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+
 # Lower CPU frequency (80 MHz is sufficient for a sensor)
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
 
@@ -80,3 +98,7 @@ CONFIG_ENABLE_SNTP_TIME_SYNC=y
 
 # CHIP project config: overrides vendor/product name and software version
 CONFIG_CHIP_PROJECT_CONFIG="main/CHIPProjectConfig.h"
+
+# Reed switch wired to GPIO 1 (3.3 V left disconnected to avoid the
+# module's 10k pull-up draining current; rely on internal pull-up).
+CONFIG_REED_SENSOR_GPIO=1

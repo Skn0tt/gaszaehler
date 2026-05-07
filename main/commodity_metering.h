@@ -29,12 +29,21 @@ typedef struct config {
 cluster_t *create(endpoint_t *endpoint, config_t *config, uint8_t flags);
 
 namespace attribute {
-attribute_t *create_metered_quantity(cluster_t *cluster, nullable<int64_t> value);
+attribute_t *create_metered_quantity(cluster_t *cluster);
 attribute_t *create_metered_quantity_timestamp(cluster_t *cluster, nullable<uint32_t> value);
 attribute_t *create_measurement_type(cluster_t *cluster, nullable<uint16_t> value);
 } /* attribute */
 
 } /* commodity_metering */
 } /* cluster */
+
+/**
+ * Update the gas pulse count exposed via the MeteredQuantity attribute.
+ * Encodes the new value as a TLV MeteredQuantityStruct list and calls
+ * attribute::update() to push it to the CHIP data model.
+ *
+ * Must be called with the CHIP stack lock held when Matter is running.
+ */
+void commodity_metering_set_quantity(int64_t quantity);
 
 } /* esp_matter */

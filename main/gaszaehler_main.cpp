@@ -10,6 +10,8 @@
 #include <esp_matter.h>
 #include <esp_matter_endpoint.h>
 #include "commodity_metering.h"
+#include <clusters/FlowMeasurement/ClusterId.h>
+#include <clusters/FlowMeasurement/AttributeIds.h>
 #include <driver/gpio.h>
 #include <esp_sleep.h>
 #include <esp_adc/adc_oneshot.h>
@@ -111,9 +113,17 @@ static void gas_counter_task(void *)
 
         chip::DeviceLayer::PlatformMgr().LockChipStack();
 
-        esp_matter_attr_val_t val = esp_matter_nullable_int64(nullable<int64_t>((int64_t)gas_count));
-        attribute::update(gas_endpoint_id, CommodityMetering::Id,
-                          CommodityMetering::Attributes::MeteredQuantity::Id, &val);
+        /* Update MeteredQuantity (must hold CHIP stack lock). */
+        commodity_metering_set_quantity((int64_t)gas_count);
+
+        /* Update FlowMeasurement.MeasuredValue (workaround for HA entity discovery).
+           Value = gas_count × 10, clamped to 65534. */
+        {
+            uint32_t clamped = gas_count <= 6553 ? gas_count * 10 : 65534;
+            esp_matter_attr_val_t fm_val = esp_matter_nullable_uint16(nullable<uint16_t>((uint16_t)clamped));
+            attribute::update(gas_endpoint_id, chip::app::Clusters::FlowMeasurement::Id,
+                              chip::app::Clusters::FlowMeasurement::Attributes::MeasuredValue::Id, &fm_val);
+        }
 
         /* Update MeteredQuantityTimestamp (epoch seconds).
            Before SNTP sync, time() returns seconds since boot — skip those
@@ -419,10 +429,27 @@ extern "C" void app_main()
     cluster_t *cl = cluster::commodity_metering::create(ep, &cm_cfg, CLUSTER_FLAG_SERVER);
     if (!cl) { ESP_LOGE(TAG, "commodity_metering::create failed"); return; }
 
-    /* Seed MeteredQuantity from NVS */
-    esp_matter_attr_val_t init_val = esp_matter_nullable_int64(nullable<int64_t>((int64_t)gas_count));
-    attribute::update(gas_endpoint_id, CommodityMetering::Id,
-                      CommodityMetering::Attributes::MeteredQuantity::Id, &init_val);
+    /* Seed MeteredQuantity from NVS into the override callback's backing store */
+    commodity_metering_set_quantity((int64_t)gas_count);
+
+    /* FlowMeasurement cluster — used as a workaround so HA auto-discovers a sensor entity.
+       HA maps FlowMeasurement.MeasuredValue → sensor (unit: m³/h, scale ÷10).
+       We repurpose MeasuredValue to carry the cumulative pulse count × 10, so HA
+       displays "pulse_count / 10". The unit label is wrong but the value tracks correctly.
+       Remove once HA gains native CommodityMetering support. */
+    cluster::flow_measurement::config_t fm_cfg;
+    fm_cfg.flow_measured_value    = nullable<uint16_t>(0);
+    fm_cfg.flow_min_measured_value = nullable<uint16_t>(0);
+    fm_cfg.flow_max_measured_value = nullable<uint16_t>(65534);
+    cluster_t *fm_cl = cluster::flow_measurement::create(ep, &fm_cfg, CLUSTER_FLAG_SERVER);
+    if (!fm_cl) { ESP_LOGW(TAG, "flow_measurement::create failed"); }
+    else {
+        /* Seed from NVS */
+        uint32_t clamped = gas_count <= 6553 ? gas_count * 10 : 65534;
+        esp_matter_attr_val_t fm_val = esp_matter_nullable_uint16(nullable<uint16_t>((uint16_t)clamped));
+        attribute::update(gas_endpoint_id, chip::app::Clusters::FlowMeasurement::Id,
+                          chip::app::Clusters::FlowMeasurement::Attributes::MeasuredValue::Id, &fm_val);
+    }
 
     ESP_LOGI(TAG, "CommodityMetering endpoint %u", gas_endpoint_id);
 
